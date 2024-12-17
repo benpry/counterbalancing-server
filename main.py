@@ -58,6 +58,7 @@ async def assign(deployment: str, pid: str):
         return 404
 
     condition["n_assignments"] += 1
+    condition["pids"].append(pid)
     collection.update_one({"_id": condition["_id"]}, {"$set": condition})
 
     condition["_id"] = str(condition["_id"])
