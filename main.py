@@ -29,14 +29,14 @@ app.add_middleware(
 )
 
 
-async def get_condition(pid: str, n_conditions: int):
+async def get_condition(deployment: str, pid: str):
     """
     Find a chain that begins with the "condition" string, isn't busy, and has the smallest number of writes and reads.
     Plus make sure it has at least one write.
     """
     pipeline = [
-        {"$match": {"pids": {"$nin": [pid]}}},
-        {"$sort": {"n_completions": -1, "n_in_progress": -1}},
+        {"$match": {"pids": {"$nin": [pid]}, "deployment": deployment}},
+        {"$sort": {"n_assignments": -1}},
         {"$sample": {"size": 1}},
     ]
 
@@ -47,37 +47,17 @@ async def get_condition(pid: str, n_conditions: int):
         return conditions[0]
 
 
-@app.get("/assign/{pid}")
-async def assign(pid: str):
+@app.get("/assign/{deployment}/{pid}")
+async def assign(deployment: str, pid: str):
     """
     Find the chain for the given condition that isn't in use and has the smallest number of completions.
     Mark that chain as in use, then return it.
     """
-    n_conditions = collection.count_documents({})
-    condition = await get_condition(pid, n_conditions)
+    condition = await get_condition(deployment, pid)
     if condition is None:
         return 404
 
-    condition["n_in_progress"] += 1
-    collection.update_one({"_id": condition["_id"]}, {"$set": condition})
-
-    condition["_id"] = str(condition["_id"])
-    return condition
-
-
-@app.post("/complete/{pid}/{condition}")
-async def complete(pid: str, condition: int):
-    """
-    Find the chain for the given condition that isn't in use and has the smallest number of completions.
-    Mark that chain as in use, then return it.
-    """
-    condition = collection.find_one({"condition": condition})
-    if condition is None:
-        return 404
-
-    condition["n_in_progress"] -= 1
-    condition["n_completions"] += 1
-    condition["pids"].append(pid)
+    condition["n_assignments"] += 1
     collection.update_one({"_id": condition["_id"]}, {"$set": condition})
 
     condition["_id"] = str(condition["_id"])
@@ -85,6 +65,7 @@ async def complete(pid: str, condition: int):
 
 
 class SetupBody(BaseModel):
+    deployments: list
     conditions: list
 
 
@@ -96,15 +77,16 @@ async def reset(body: SetupBody):
     collection.delete_many({})
 
     to_insert = []
-    for condition in body.conditions:
-        to_insert.append(
-            {
-                "condition": condition,
-                "n_in_progress": 0,
-                "n_completions": 0,
-                "pids": [],
-            }
-        )
+    for deployment in body.deployments:
+        for condition in body.conditions:
+            to_insert.append(
+                {
+                    "deployment": deployment,
+                    "condition": condition,
+                    "n_assignments": 0,
+                    "pids": [],
+                }
+            )
 
     res = collection.insert_many(to_insert)
 
@@ -114,13 +96,13 @@ async def reset(body: SetupBody):
     }
 
 
-@app.post("/abandon/{condition}")
-async def abandon(condition: int):
-    condition = collection.find_one({"condition": condition})
+@app.post("/abandon/{deployment}/{condition}")
+async def abandon(deployment: str, condition: int):
+    condition = collection.find_one({"deployment": deployment, "condition": condition})
     if condition is None:
         return 404
 
-    condition["n_in_progress"] -= 1
+    condition["n_assignments"] -= 1
     collection.update_one({"_id": condition["_id"]}, {"$set": condition})
 
     condition["_id"] = str(condition["_id"])
