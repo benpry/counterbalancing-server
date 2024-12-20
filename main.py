@@ -65,7 +65,7 @@ async def assign(deployment: str, pid: str):
     return condition
 
 
-@app.get("/assign/complete/{deployment}/{condition}")
+@app.get("/complete/{deployment}/{condition}")
 async def complete(deployment: str, condition: int):
     condition = collection.find_one({"deployment": deployment, "condition": condition})
     if condition is None:
