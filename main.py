@@ -57,8 +57,21 @@ async def assign(deployment: str, pid: str):
     if condition is None:
         return 404
 
-    condition["n_assignments"] += 1
+    condition["n_assignments"] += 0.5
     condition["pids"].append(pid)
+    collection.update_one({"_id": condition["_id"]}, {"$set": condition})
+
+    condition["_id"] = str(condition["_id"])
+    return condition
+
+
+@app.get("/assign/complete/{deployment}/{condition}")
+async def complete(deployment: str, condition: int):
+    condition = collection.find_one({"deployment": deployment, "condition": condition})
+    if condition is None:
+        return 404
+
+    condition["n_assignments"] += 0.5
     collection.update_one({"_id": condition["_id"]}, {"$set": condition})
 
     condition["_id"] = str(condition["_id"])
@@ -103,7 +116,7 @@ async def abandon(deployment: str, condition: int):
     if condition is None:
         return 404
 
-    condition["n_assignments"] -= 1
+    condition["n_assignments"] -= 0.5
     collection.update_one({"_id": condition["_id"]}, {"$set": condition})
 
     condition["_id"] = str(condition["_id"])
